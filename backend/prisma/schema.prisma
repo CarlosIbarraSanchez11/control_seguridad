@@ -7,6 +7,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Administrador {
+  id        Int      @id @default(autoincrement())
+  usuario   String   @unique
+  password  String   // Aquí guardaremos la contraseña (más adelante la encriptaremos con bcrypt)
+  nombre    String
+  rol       String   @default("ADMIN") // Por si luego tienes niveles como "SUPERVISOR"
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now())
+}
+
 model Sede {
   id          Int         @id @default(autoincrement())
   nombre      String
