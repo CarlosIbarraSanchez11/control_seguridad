@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 
 export default function ModalProgramacion({ isOpen, onClose, onSave, semanaProgramada, catalogoSedes = [], turnos = [] }) {
   const [formData, setFormData] = useState({
-    unidad: '', // Sede (Ej: USIL)
-    emplazamiento: '', // Ambiente (Ej: RECEPCIÓN)
-    turno: 'DÍA',
+    unidad: '', 
+    emplazamiento: '', 
+    turno: 'DÍA', // Se guardará internamente, ya no se muestra en un select
     plantilla: '',
     horaInicio: '07:00',
     horaFin: '19:00'
@@ -28,14 +28,12 @@ export default function ModalProgramacion({ isOpen, onClose, onSave, semanaProgr
     { id: 'ju', label: 'J', nombre: 'Jueves' }, { id: 'vi', label: 'V', nombre: 'Viernes' }, { id: 'sa', label: 'S', nombre: 'Sábado' }, { id: 'do', label: 'D', nombre: 'Domingo' }
   ];
 
-  // 🧠 FILTRO EN CASCADA: Extraemos los ambientes de la sede seleccionada
   const sedeSeleccionada = catalogoSedes.find(s => s.nombre === formData.unidad);
   const ambientesDisponibles = sedeSeleccionada ? sedeSeleccionada.ambientes : [];
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     
-    // Si cambian la sede, reseteamos el ambiente
     if (name === 'unidad') {
       setFormData({ ...formData, unidad: value, emplazamiento: '' });
       return;
@@ -48,7 +46,7 @@ export default function ModalProgramacion({ isOpen, onClose, onSave, semanaProgr
         plantilla: value, 
         horaInicio: d ? d.inicio : '07:00', 
         horaFin: d ? d.fin : '19:00',
-        turno: d ? d.turno : formData.turno
+        turno: d ? d.turno : 'DÍA' // ✨ El turno se asigna automáticamente aquí
       });
       return;
     }
@@ -104,7 +102,6 @@ export default function ModalProgramacion({ isOpen, onClose, onSave, semanaProgr
         <form onSubmit={handleSubmit} className="p-8 space-y-5">
           <div className="grid grid-cols-2 gap-5">
             
-            {/* ✨ PASO 1: ELEGIR SEDE */}
             <div>
               <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Sede Principal</label>
               <select required name="unidad" value={formData.unidad} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold text-sm text-gray-900 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all uppercase cursor-pointer">
@@ -115,7 +112,6 @@ export default function ModalProgramacion({ isOpen, onClose, onSave, semanaProgr
               </select>
             </div>
 
-            {/* ✨ PASO 2: ELEGIR AMBIENTE (FILTRADO) */}
             <div>
               <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Ambiente / Puesto</label>
               <select required name="emplazamiento" value={formData.emplazamiento} onChange={handleChange} disabled={!formData.unidad} className={`w-full px-4 py-3 border border-gray-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all uppercase ${!formData.unidad ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white text-gray-900 cursor-pointer'}`}>
@@ -126,25 +122,19 @@ export default function ModalProgramacion({ isOpen, onClose, onSave, semanaProgr
               </select>
             </div>
 
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Turno</label>
-              <select name="turno" value={formData.turno} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-white font-bold text-sm text-gray-900 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all cursor-pointer">
-                <option value="DÍA">DÍA (07:00 - 19:00)</option>
-                <option value="NOCHE">NOCHE (19:00 - 07:00)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Perfil Solicitado</label>
+            {/* ✨ PASO 1: PERFIL SOLICITADO AHORA OCUPA LAS 2 COLUMNAS Y MUESTRA EL TURNO */}
+            <div className="col-span-2">
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Perfil Operativo</label>
               <select required name="plantilla" value={formData.plantilla} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 transition-all bg-white text-gray-900 cursor-pointer">
-                <option value="">-- PERFIL --</option>
+                <option value="">-- SELECCIONE EL PERFIL --</option>
                 {Object.entries(perfilesHorario).map(([clave, datos]) => (
-                  <option key={clave} value={clave}>{clave} - {datos.desc}</option>
+                  <option key={clave} value={clave}>
+                    {clave} - {datos.desc} | {datos.turno} ({datos.inicio} a {datos.fin})
+                  </option>
                 ))}
               </select>
             </div>
 
-            {/* ─── CALENDARIO INFORMATIVO CON DETECCIÓN ─── */}
             <div className="col-span-2 bg-gray-50/50 p-4 rounded-2xl border border-gray-100 mt-2">
               <div className="flex justify-between items-center mb-3">
                 <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-2">
@@ -162,7 +152,6 @@ export default function ModalProgramacion({ isOpen, onClose, onSave, semanaProgr
                   const diasTrabajo = formData.plantilla ? perfilesHorario[formData.plantilla].dias : [];
                   const esDiaDeTrabajo = diasTrabajo.includes(dia.id);
 
-                  // 🔍 INTERCEPCIÓN: Busca si ya hay un slot para este día en la misma Sede y Ambiente
                   const estaOcupadoEnAmbiente = formData.emplazamiento 
                     ? turnos.some(t => t.unidad === formData.unidad && t.emplazamiento === formData.emplazamiento && t.turno === formData.turno && (t[dia.id] === 'OK' || t[dia.id] === 'SIN_ASIGNAR' || t[dia.id] === 'FALTA'))
                     : false;

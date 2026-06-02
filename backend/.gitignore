@@ -1,0 +1,26 @@
+# Dependencias
+node_modules/
+
+# Variables de entorno (¡CRÍTICO!)
+.env
+.env.local
+.env.*.local
+
+# Salida de compilación (TypeScript)
+dist/
+build/
+out/
+
+# Prisma
+/generated/prisma
+# Es recomendable también ignorar el cliente generado si está en una carpeta distinta, 
+# pero si usas el cliente estándar, basta con lo que tienes.
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

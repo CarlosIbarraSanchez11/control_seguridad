@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Sede {
+  id          Int         @id @default(autoincrement())
+  nombre      String
+  lat         Float
+  lng         Float
+  radio       Int         @default(50)
+  activo      Boolean     @default(true)
+  creadoEn    DateTime    @default(now())
+
+  guardias    Guardia[]
+  turnos      Turno[]
+  marcaciones Marcacion[]
+}
+
+model Guardia {
+  id          Int         @id @default(autoincrement())
+  nombre      String
+  dni         String      @unique
+  perfil      String
+  plantilla   String?
+  descriptor  Json?
+  creadoEn    DateTime    @default(now())
+
+  sedeId      Int?
+  sede        Sede?       @relation(fields: [sedeId], references: [id])
+  turnos      Turno[]
+  marcaciones Marcacion[]
+}
+
+model Turno {
+  id            Int         @id @default(autoincrement())
+  emplazamiento String
+  horaInicio    String
+  horaFin       String
+  diasSemana    Json
+  semana        String      @default("Semana 1")
+
+  sedeId        Int
+  sede          Sede        @relation(fields: [sedeId], references: [id])
+  guardiaId     Int
+  guardia       Guardia     @relation(fields: [guardiaId], references: [id])
+  marcaciones   Marcacion[]
+}
+
+model Marcacion {
+  id          Int      @id @default(autoincrement())
+  tipo        String
+  lat         Float
+  lng         Float
+  distancia   Float
+  dentroRango Boolean
+  creadoEn    DateTime @default(now())
+
+  guardiaId   Int
+  guardia     Guardia  @relation(fields: [guardiaId], references: [id])
+  sedeId      Int
+  sede        Sede     @relation(fields: [sedeId], references: [id])
+  turnoId     Int?
+  turno       Turno?   @relation(fields: [turnoId], references: [id])
+}
