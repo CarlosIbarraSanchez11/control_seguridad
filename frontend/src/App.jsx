@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
 import AdminSedes from './pages/AdminSedes';
 import AdminUsuarios from './pages/AdminUsuarios';
@@ -21,10 +21,27 @@ const C = {
 };
 
 export default function App() {
-  const [vista, setVista] = useState('seleccion');
+  // ✨ ESTADOS INICIALIZADOS CON LOCALSTORAGE
+  const [vista, setVista] = useState(() => {
+    return localStorage.getItem('app_vista') || 'seleccion';
+  });
+  
+  const [tab, setTab] = useState(() => {
+    return localStorage.getItem('app_tab') || 'sedes';
+  });
+
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
-  const [tab, setTab] = useState('sedes'); 
+
+  // ✨ EFECTOS PARA SINCRONIZAR CON LOCALSTORAGE
+  useEffect(() => {
+    localStorage.setItem('app_vista', vista);
+  }, [vista]);
+
+  useEffect(() => {
+    localStorage.setItem('app_tab', tab);
+  }, [tab]);
+
 
   const handleLogin = async (e, tipoDestino) => {
     e.preventDefault();
@@ -33,7 +50,7 @@ export default function App() {
       try {
         const respuesta = await authAPI.loginAdmin({ usuario, password });
         
-        // ✨ ALERTA DE ÉXITO
+        // ALERTA DE ÉXITO
         Swal.fire({
           icon: 'success',
           title: '¡Acceso Concedido!',
@@ -50,7 +67,7 @@ export default function App() {
       } catch (error) {
         const mensajeError = error.response?.data?.error || "Error al conectar con el servidor";
         
-        // ✨ ALERTA DE ERROR
+        // ALERTA DE ERROR
         Swal.fire({
           icon: 'error',
           title: 'Acceso Denegado',
@@ -174,7 +191,16 @@ export default function App() {
 
             </div>
           </div>
-          <button onClick={() => { setVista('seleccion'); setTab('sedes'); }} className={`${C.danger} px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 active:scale-95`}>
+          {/* ✨ BOTÓN DE CERRAR SESIÓN LIMPIA EL LOCALSTORAGE */}
+          <button 
+            onClick={() => { 
+              localStorage.removeItem('app_vista'); 
+              localStorage.removeItem('app_tab');
+              setVista('seleccion'); 
+              setTab('sedes'); 
+            }} 
+            className={`${C.danger} px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 active:scale-95`}
+          >
             <span>🚪</span> Cerrar Sesión
           </button>
         </nav>
@@ -193,7 +219,13 @@ export default function App() {
       <div className="min-h-screen bg-white">
         <nav className={`bg-white text-gray-950 p-4 px-6 flex justify-between items-center shadow-sm border-b ${C.divider}`}>
           <div className={`font-black text-lg tracking-tighter ${C.activeText}`}><span className='font-light text-gray-400 ml-1.5'>OPERATIVO</span></div>
-          <button onClick={() => setVista('seleccion')} className={`${C.danger} px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 active:scale-95`}>
+          <button 
+            onClick={() => {
+              localStorage.removeItem('app_vista'); 
+              setVista('seleccion');
+            }} 
+            className={`${C.danger} px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 active:scale-95`}
+          >
             <span>🚪</span> Salir de Portal
           </button>
         </nav>
