@@ -1,35 +1,69 @@
 import { useState } from 'react';
+import Swal from 'sweetalert2';
 import AdminSedes from './pages/AdminSedes';
 import AdminUsuarios from './pages/AdminUsuarios';
 import GuardiaAsistencia from './pages/GuardiaAsistencia';
 import AdminProgramacion from './pages/AdminProgramacion';
 
+// ✨ IMPORTAMOS NUESTRA API CENTRALIZADA
+import { authAPI } from './services/api'; 
+
 /* ── Definición de Colores Pastel Reutilizables ── */
-// Estos colores están inspirados en la imagen de referencia: blanco puro, gris claro y verde menta suave (emerald).
 const C = {
-  activeBg: 'bg-emerald-50', // Fondo mint claro para elementos activos/tabs
-  activeText: 'text-emerald-800', // Texto mint oscuro para elementos activos/tabs
-  activeBorder: 'border-emerald-500', // Borde mint para inputs activos
-  buttonSolid: 'bg-emerald-600 hover:bg-emerald-700 text-white', // Botones sólidos de acción principal
-  buttonGuardia: 'bg-emerald-50 text-emerald-800 border border-emerald-100 hover:bg-emerald-100', // Botón pastel para Guardia
-  buttonAdmin: 'bg-indigo-50 text-indigo-800 border border-indigo-100 hover:bg-indigo-100', // Botón pastel para Admin
-  danger: 'bg-rose-50 text-rose-700 border border-rose-100 hover:bg-rose-100', // Botón pastel para Cerrar Sesión
-  divider: 'border-gray-100', // Bordes sutiles imitando la imagen
+  activeBg: 'bg-emerald-50', 
+  activeText: 'text-emerald-800', 
+  activeBorder: 'border-emerald-500', 
+  buttonSolid: 'bg-emerald-600 hover:bg-emerald-700 text-white', 
+  buttonGuardia: 'bg-emerald-50 text-emerald-800 border border-emerald-100 hover:bg-emerald-100', 
+  buttonAdmin: 'bg-indigo-50 text-indigo-800 border border-indigo-100 hover:bg-indigo-100', 
+  danger: 'bg-rose-50 text-rose-700 border border-rose-100 hover:bg-rose-100', 
+  divider: 'border-gray-100', 
 };
 
 export default function App() {
-  // 1. TODOS LOS HOOKS ARRIBA (Regla de oro de React)
   const [vista, setVista] = useState('seleccion');
   const [usuario, setUsuario] = useState('');
   const [password, setPassword] = useState('');
-  const [tab, setTab] = useState('sedes'); // <-- Lo movimos aquí arriba
+  const [tab, setTab] = useState('sedes'); 
 
-  const handleLogin = (e, tipoDestino) => {
+  const handleLogin = async (e, tipoDestino) => {
     e.preventDefault();
-    console.log(`Iniciando sesión como ${tipoDestino}:`, usuario);
-    setVista(tipoDestino);
-    setUsuario('');
-    setPassword('');
+    
+    if (tipoDestino === 'panel-admin') {
+      try {
+        const respuesta = await authAPI.loginAdmin({ usuario, password });
+        
+        // ✨ ALERTA DE ÉXITO
+        Swal.fire({
+          icon: 'success',
+          title: '¡Acceso Concedido!',
+          text: `Bienvenido al sistema, ${respuesta.data.usuario.nombre}`,
+          confirmButtonColor: '#059669', // emerald-600
+          timer: 2000,
+          showConfirmButton: false
+        });
+
+        setVista(tipoDestino);
+        setUsuario('');
+        setPassword('');
+        
+      } catch (error) {
+        const mensajeError = error.response?.data?.error || "Error al conectar con el servidor";
+        
+        // ✨ ALERTA DE ERROR
+        Swal.fire({
+          icon: 'error',
+          title: 'Acceso Denegado',
+          text: mensajeError,
+          confirmButtonColor: '#e11d48' // rose-600
+        });
+      }
+    } else {
+      console.log(`Iniciando sesión operativa:`, usuario);
+      setVista(tipoDestino);
+      setUsuario('');
+      setPassword('');
+    }
   };
 
   // --- PANTALLA 1: Selección de Módulo ---
@@ -38,7 +72,6 @@ export default function App() {
       <div className="min-h-screen bg-white flex items-center justify-center p-6">
         <div className={`bg-white rounded-2xl shadow-sm ${C.divider} border p-12 w-full max-w-lg text-center animate-in fade-in zoom-in-95 duration-200`}>
           <div className="flex justify-center mb-6">
-            {/* Un pequeño icono de marcador para darle ese toque de la imagen */}
             <div className={`w-14 h-14 ${C.activeBg} rounded-full flex items-center justify-center border-4 border-white shadow-lg`}>
               <span className={`text-3xl ${C.activeText}`}>🛡️</span>
             </div>
@@ -113,7 +146,6 @@ export default function App() {
   if (vista === 'panel-admin') {
     return (
       <div className="min-h-screen bg-white">
-        {/* Navegación blanca y limpia con división sutil (Imagen Base) */}
         <nav className={`bg-white text-gray-950 p-4 px-6 flex justify-between items-center shadow-sm border-b ${C.divider}`}>
           <div className="flex items-center gap-10">
             <div className={`font-black text-xl tracking-tighter ${C.activeText}`}><span className='font-light text-gray-400 ml-1'>ADMIN</span></div>
@@ -133,7 +165,6 @@ export default function App() {
                 <span className={tab === 'usuarios' ? '' : 'opacity-50'}>👥</span> Gestionar Usuarios
               </button>
 
-              {/* ✨ NUEVO BOTÓN PARA EL MÓDULO DE TURNOS */}
               <button 
                 onClick={() => setTab('programacion')} 
                 className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-tight transition-all flex items-center gap-2.5 ${tab === 'programacion' ? `${C.activeBg} ${C.activeText} shadow-inner` : 'text-gray-600 hover:bg-gray-50'}`}
@@ -148,7 +179,6 @@ export default function App() {
           </button>
         </nav>
         
-        {/* ✨ Renderizado condicional según el Tab seleccionado */}
         <div className="p-8">
           {tab === 'sedes' && <AdminSedes />}
           {tab === 'usuarios' && <AdminUsuarios />}
@@ -161,15 +191,12 @@ export default function App() {
   if (vista === 'panel-guardia') {
     return (
       <div className="min-h-screen bg-white">
-        {/* Navegación blanca y limpia (Imagen Base) */}
         <nav className={`bg-white text-gray-950 p-4 px-6 flex justify-between items-center shadow-sm border-b ${C.divider}`}>
           <div className={`font-black text-lg tracking-tighter ${C.activeText}`}><span className='font-light text-gray-400 ml-1.5'>OPERATIVO</span></div>
           <button onClick={() => setVista('seleccion')} className={`${C.danger} px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 active:scale-95`}>
             <span>🚪</span> Salir de Portal
           </button>
         </nav>
-        
-        {/* Aquí llamamos al componente con la IA */}
         <div className="p-8">
           <GuardiaAsistencia />
         </div>
