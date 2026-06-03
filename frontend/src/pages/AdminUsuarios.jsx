@@ -1,28 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
 import * as faceapi from 'face-api.js';
+import Swal from 'sweetalert2';
+import { sedesAPI } from '../services/api'; // ✨ Conectamos a las sedes reales
 
 export default function AdminUsuarios() {
-  const sedesDisponibles = [
-    { id: 1, nombre: 'Sede ATE - Principal' },
-    { id: 2, nombre: 'Pabellón B' },
-    { id: 3, nombre: 'Almacén Central' },
-    { id: 4, nombre: 'SURQUILLO 1' },
-    { id: 5, nombre: 'WASHINGTON 2A' },
-    { id: 6, nombre: 'USIL' }
-  ];
+  // ─── ESTADOS DE DATOS ───
+  const [sedesDisponibles, setSedesDisponibles] = useState([]);
+  const [listaUsuarios, setListaUsuarios] = useState([]);
 
-  const [listaUsuarios, setListaUsuarios] = useState([
-    { id: 1, nombre: 'Juan Pérez', dni: '77889900', perfil: 'FIJO', plantilla: 'P1', sede: 'SURQUILLO 1', facialListo: true, descriptor: null },
-  ]);
-
+  // ─── ESTADOS DEL FORMULARIO ───
   const [nombre, setNombre] = useState('');
   const [dni, setDni] = useState('');
   const [perfil, setPerfil] = useState('FIJO'); 
   const [sedeAsignada, setSedeAsignada] = useState('');
-  
-  // ✨ NUEVO: Estado para la Plantilla de Horario
-  const [plantilla, setPlantilla] = useState(''); 
-  
+
+  // ─── ESTADOS DE BIOMETRÍA ───
   const [capturando, setCapturando] = useState(false);
   const [modelosCargados, setModelosCargados] = useState(false);
   const [descriptorGenerado, setDescriptorGenerado] = useState(null);
@@ -32,21 +24,35 @@ export default function AdminUsuarios() {
   const canvasRef = useRef(null); 
   const intervalRef = useRef(null); 
 
+  // ✨ CARGAR SEDES DESDE MYSQL AL INICIAR
+  useEffect(() => {
+    const cargarSedes = async () => {
+      try {
+        const respuesta = await sedesAPI.obtenerTodas();
+        // Filtramos para mostrar solo las sedes activas
+        setSedesDisponibles(respuesta.data.filter(s => s.activo));
+      } catch (error) {
+        console.error("Error al cargar sedes:", error);
+      }
+    };
+    cargarSedes();
+  }, []);
+
+  // ✨ CARGAR MODELOS DE FACE-API
   useEffect(() => {
     const cargarModelos = async () => {
       try {
-        setMensajeIA('Cargando modelos de IA...');
+        setMensajeIA('Cargando redes neuronales...');
         await Promise.all([
           faceapi.nets.tinyFaceDetector.loadFromUri('/models'),
           faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
           faceapi.nets.faceRecognitionNet.loadFromUri('/models')
         ]);
-        console.log("🧠 ¡Éxito: Los 3 modelos de IA se han cargado en memoria!");
         setModelosCargados(true);
-        setMensajeIA('Modelos de IA listos.');
+        setMensajeIA('✅ IA Biométrica Lista.');
       } catch (error) {
         console.error("Error al cargar modelos:", error);
-        setMensajeIA('Error al cargar la IA. Revisa la consola.');
+        setMensajeIA('❌ Error en IA. Faltan los archivos en /models');
       }
     };
     cargarModelos();
@@ -56,9 +62,10 @@ export default function AdminUsuarios() {
     };
   }, []);
 
+  // ─── LÓGICA DE BIOMETRÍA ───
   const iniciarCamara = () => {
     if (!modelosCargados) {
-      alert("Por favor, espera a que los modelos de IA se carguen.");
+      Swal.fire({ icon: 'warning', title: 'Aún no', text: 'Espera a que los modelos de IA terminen de cargar.' });
       return;
     }
     setCapturando(true);
@@ -68,7 +75,11 @@ export default function AdminUsuarios() {
         videoRef.current.srcObject = stream; 
         videoRef.current.onplay = () => dibujarRostroEnTiempoReal();
       })
-      .catch(err => console.error("Error cámara:", err));
+      .catch(err => {
+        console.error("Error cámara:", err);
+        Swal.fire({ icon: 'error', title: 'Sin Cámara', text: 'Permite el acceso a la cámara en tu navegador.' });
+        setCapturando(false);
+      });
   };
 
   const dibujarRostroEnTiempoReal = async () => {
@@ -77,6 +88,7 @@ export default function AdminUsuarios() {
     faceapi.matchDimensions(canvasRef.current, displaySize);
 
     intervalRef.current = setInterval(async () => {
+      if (!videoRef.current) return;
       const opciones = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.2 });
       const detections = await faceapi.detectAllFaces(videoRef.current, opciones).withFaceLandmarks();
       
@@ -90,7 +102,7 @@ export default function AdminUsuarios() {
 
   const capturarHuellaFacial = async () => {
     if (!videoRef.current) return;
-    setMensajeIA('Analizando rostro... ¡Mantente quieto!');
+    setMensajeIA('Analizando geometría facial... ¡No te muevas!');
 
     try {
       const opciones = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.5 });
@@ -101,218 +113,232 @@ export default function AdminUsuarios() {
       if (detection) {
         const descriptorArray = Array.from(detection.descriptor);
         setDescriptorGenerado(descriptorArray);
-        setMensajeIA('✅ Descriptor Facial capturado correctamente.');
+        setMensajeIA('✅ Huella Facial Encriptada con éxito.');
         
         if (intervalRef.current) clearInterval(intervalRef.current);
         videoRef.current.srcObject.getTracks().forEach(track => track.stop());
         setCapturando(false);
       } else {
-        setMensajeIA('❌ No se detectó ningún rostro claro. Mejora la iluminación o mira de frente.');
+        setMensajeIA('❌ Rostro no detectado. Mira de frente a la cámara.');
       }
     } catch (error) {
-      console.error("Error analizando rostro:", error);
-      setMensajeIA('Error durante el análisis.');
+      console.error("Error analizando:", error);
+      setMensajeIA('Error durante el escaneo.');
+    }
+  };
+
+  // ─── GUARDADO Y VALIDACIÓN ───
+  const handlePerfilChange = (e) => {
+    const nuevoPerfil = e.target.value;
+    setPerfil(nuevoPerfil);
+    if (nuevoPerfil !== 'FIJO') {
+      setSedeAsignada(''); // Los retenes/descanseros no tienen sede fija
     }
   };
 
   const guardarUsuario = (e) => {
     e.preventDefault();
     if (!descriptorGenerado) {
-      alert("¡Debes capturar la huella facial antes de guardar el usuario!");
-      return;
-    }
-    
-    // Validación de plantilla si es Fijo
-    if (perfil === 'FIJO' && !plantilla) {
-      alert("¡Debes seleccionar una Plantilla de Horario para el perfil FIJO!");
+      Swal.fire({ icon: 'warning', title: 'Falta Biometría', text: 'Debes capturar el rostro del guardia antes de guardarlo.' });
       return;
     }
 
-    const nuevo = { 
+    if (perfil === 'FIJO' && !sedeAsignada) {
+      Swal.fire({ icon: 'warning', title: 'Sede Requerida', text: 'Los perfiles FIJOS deben tener una sede asignada.' });
+      return;
+    }
+
+    const nuevoGuardia = { 
       id: Date.now(), 
       nombre, 
       dni, 
       perfil, 
-      plantilla: perfil === 'FIJO' ? plantilla : '-', // Solo los fijos tienen plantilla base
-      sede: sedeAsignada, 
+      sedeId: perfil === 'FIJO' ? sedeAsignada : null, 
+      sedeNombre: perfil === 'FIJO' ? sedesDisponibles.find(s => s.id.toString() === sedeAsignada)?.nombre : 'ASIGNACIÓN DINÁMICA',
       facialListo: true, 
       descriptor: descriptorGenerado
     };
     
-    setListaUsuarios([...listaUsuarios, nuevo]);
+    // TODO: Aquí luego reemplazaremos con guardiasAPI.crear(nuevoGuardia)
+    setListaUsuarios([...listaUsuarios, nuevoGuardia]);
+    
+    Swal.fire({ icon: 'success', title: '¡Guardia Enrolado!', timer: 1500, showConfirmButton: false });
+
+    // Limpiar formulario
     setNombre(''); 
     setDni(''); 
     setPerfil('FIJO'); 
     setSedeAsignada(''); 
-    setPlantilla('');
     setDescriptorGenerado(null); 
-    setMensajeIA('Modelos de IA listos.');
-  };
-
-  const handlePerfilChange = (e) => {
-    const nuevoPerfil = e.target.value;
-    setPerfil(nuevoPerfil);
-    if (nuevoPerfil !== 'FIJO') {
-      setSedeAsignada('MÚLTIPLES SEDES (VOLANTE)');
-      setPlantilla(''); // Limpiamos la plantilla si no es fijo
-    } else {
-      setSedeAsignada('');
-    }
+    setMensajeIA('✅ IA Biométrica Lista.');
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="animate-in fade-in zoom-in-95 duration-500">
       
-      {/* FORMULARIO DE REGISTRO */}
-      <div className="bg-white p-6 rounded-xl shadow-md h-fit">
-        <h2 className="text-xl font-bold mb-4">Registrar Nuevo Guardia</h2>
-        <form onSubmit={guardarUsuario} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Nombre Completo</label>
-            <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} className="w-full mt-1 border p-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" required />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">DNI / ID</label>
-            <input type="text" value={dni} onChange={e => setDni(e.target.value)} className="w-full mt-1 border p-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" required />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Perfil Operativo</label>
-            <select value={perfil} onChange={handlePerfilChange} className="w-full mt-1 border p-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" required>
-              <option value="FIJO">FIJO</option>
-              <option value="DESCANSERO">DESCANSERO</option>
-              <option value="RETÉN">RETÉN</option>
-            </select>
-          </div>
-
-          {/* ✨ NUEVO: Selector de Plantilla (Se muestra solo si es FIJO) */}
-          {perfil === 'FIJO' && (
-            <div className="bg-blue-50/50 p-3 rounded-lg border border-blue-100">
-              <label className="block text-sm font-bold text-blue-800">Plantilla Base (Horario)</label>
-              <select 
-                value={plantilla} 
-                onChange={e => setPlantilla(e.target.value)} 
-                className="w-full mt-1 border border-blue-200 p-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
-                required
-              >
-                <option value="">Seleccione una plantilla...</option>
-                <option value="P1">P1 (L-V | DÍA | 07:00 a 19:00)</option>
-                <option value="P2">P2 (L-S | DÍA | 07:00 a 19:00)</option>
-                <option value="P3">P3 (L-D | DÍA | 07:00 a 19:00)</option>
-                <option value="P4">P4 (L-V | NOCHE | 19:00 a 07:00)</option>
-                <option value="P5">P5 (L-S | NOCHE | 19:00 a 07:00)</option>
-                <option value="P6">P6 (L-D | NOCHE | 19:00 a 07:00)</option>
-              </select>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Sede Asignada</label>
-            <select 
-              value={sedeAsignada} 
-              onChange={e => setSedeAsignada(e.target.value)} 
-              disabled={perfil !== 'FIJO'}
-              className={`w-full mt-1 border p-2 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 ${perfil !== 'FIJO' ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`} 
-              required
-            >
-              {perfil === 'FIJO' ? (
-                <>
-                  <option value="">Seleccione una sede...</option>
-                  {sedesDisponibles.map(s => <option key={s.id} value={s.nombre}>{s.nombre}</option>)}
-                </>
-              ) : (
-                <option value="MÚLTIPLES SEDES (VOLANTE)">MÚLTIPLES SEDES (VOLANTE)</option>
-              )}
-            </select>
-          </div>
-
-          {/* ÁREA DE CAPTURA BIOMÉTRICA */}
-          <div className="pt-4 border-t">
-            <label className="block text-sm font-bold text-gray-800 mb-2">Biometría Facial</label>
-            <p className="text-xs text-gray-500 mb-2">{mensajeIA}</p>
-            
-            {!capturando && !descriptorGenerado && (
-              <button type="button" onClick={iniciarCamara} disabled={!modelosCargados} className={`w-full py-4 rounded-lg border-2 border-dashed font-medium ${modelosCargados ? 'bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
-                📸 Iniciar Cámara para Foto Base
-              </button>
-            )}
-
-            {capturando && (
-              <div className="space-y-3 relative flex flex-col items-center">
-                 <div className="relative w-full rounded-lg bg-black overflow-hidden aspect-video flex justify-center items-center">
-                    <video ref={videoRef} autoPlay muted playsInline className="absolute top-0 left-0 w-full h-full object-cover"></video>
-                    <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full object-cover pointer-events-none"></canvas>
-                </div>
-                <button type="button" onClick={capturarHuellaFacial} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-bold shadow-md transition-colors">
-                  🎯 Extraer Descriptor Facial
-                </button>
-              </div>
-            )}
-
-            {descriptorGenerado && !capturando && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                <div className="text-green-600 mb-2"><i className="fa-solid fa-check-circle fa-2x"></i></div>
-                <p className="text-sm font-bold text-green-800">Huella Facial Capturada</p>
-                <button type="button" onClick={iniciarCamara} className="text-xs text-blue-600 mt-2 underline">
-                  Volver a tomar foto
-                </button>
-              </div>
-            )}
-          </div>
-
-          <button type="submit" disabled={!descriptorGenerado} className={`w-full py-3 rounded-lg font-bold shadow-lg mt-4 transition-colors ${descriptorGenerado ? 'bg-blue-600 hover:bg-blue-700 text-white' : 'bg-blue-300 text-blue-50 cursor-not-allowed'}`}>
-            Guardar Usuario en MySQL
-          </button>
-        </form>
+      {/* ─── CABECERA ─── */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-black text-gray-900 tracking-tighter flex items-center gap-3">
+          👥 Enrolamiento de Personal
+        </h2>
+        <p className="text-sm font-medium text-gray-500 mt-2">
+          Registra a los guardias, asigna sus perfiles operativos y captura su biometría facial para marcación.
+        </p>
       </div>
 
-      {/* TABLA DE USUARIOS */}
-      <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-md h-fit">
-        <h2 className="text-xl font-bold mb-4">Personal Enrolado</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-gray-600 border-b">
-                <th className="p-4 font-semibold">Nombre / DNI</th>
-                <th className="p-4 font-semibold">Perfil y Sede</th>
-                <th className="p-4 font-semibold text-center">Plantilla Base</th>
-                <th className="p-4 font-semibold text-center">Biometría</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {listaUsuarios.map(u => (
-                <tr key={u.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="p-4">
-                    <div className="font-bold text-gray-800">{u.nombre}</div>
-                    <div className="text-xs text-gray-500 mt-1">DNI: {u.dni}</div>
-                  </td>
-                  
-                  <td className="p-4">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider mb-1 inline-block ${u.perfil === 'FIJO' ? 'bg-indigo-100 text-indigo-700' : 'bg-teal-100 text-teal-700'}`}>
-                      {u.perfil}
-                    </span>
-                    <div className="text-xs text-gray-600 mt-1 font-medium">{u.sede}</div>
-                  </td>
-                  
-                  {/* ✨ NUEVO: Mostramos la plantilla asignada */}
-                  <td className="p-4 text-center">
-                    <span className="font-mono text-sm font-bold text-gray-700">{u.plantilla}</span>
-                  </td>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* ─── COLUMNA IZQUIERDA: FORMULARIO ─── */}
+        <div className="lg:col-span-1 bg-white rounded-3xl shadow-sm border border-gray-100 p-8 h-fit relative overflow-hidden">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-lg">
+              👨‍✈️
+            </div>
+            <h3 className="text-lg font-black text-gray-900 tracking-tight">Nuevo Registro</h3>
+          </div>
+          
+          <form onSubmit={guardarUsuario} className="space-y-5">
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Nombre Completo</label>
+              <input type="text" value={nombre} onChange={e => setNombre(e.target.value)} className="w-full px-4 py-3 border border-gray-100 rounded-xl bg-gray-50 font-bold text-sm text-gray-900 outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 focus:bg-white transition-all" required placeholder="Ej: Carlos Ibarra" />
+            </div>
+            
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">DNI / Documento</label>
+              <input type="text" value={dni} onChange={e => setDni(e.target.value)} className="w-full px-4 py-3 border border-gray-100 rounded-xl bg-gray-50 font-bold text-sm text-gray-900 outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 focus:bg-white transition-all" required placeholder="Número de identidad" />
+            </div>
 
-                  <td className="p-4 text-center">
-                    {u.facialListo ? 
-                      <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] font-bold inline-flex items-center gap-1">
-                        ✓ REGISTRADO
-                      </span> :
-                      <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-[10px] font-bold">
-                        PENDIENTE
-                      </span>
-                    }
-                  </td>
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Perfil Operativo</label>
+              <select value={perfil} onChange={handlePerfilChange} className="w-full px-4 py-3 border border-gray-100 rounded-xl bg-gray-50 font-bold text-sm text-gray-900 outline-none focus:ring-2 focus:ring-teal-100 focus:border-teal-400 focus:bg-white transition-all" required>
+                <option value="FIJO">🛡️ Guardia FIJO (Requiere Sede)</option>
+                <option value="DESCANSERO">🔄 Guardia DESCANSERO (Volante)</option>
+                <option value="RETÉN">⚡ Guardia RETÉN (Emergencias)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1">Sede de Trabajo</label>
+              <select 
+                value={sedeAsignada} 
+                onChange={e => setSedeAsignada(e.target.value)} 
+                disabled={perfil !== 'FIJO'}
+                className={`w-full px-4 py-3 border border-gray-100 rounded-xl font-bold text-sm outline-none transition-all ${perfil !== 'FIJO' ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-gray-50 text-gray-900 focus:ring-2 focus:ring-teal-100 focus:border-teal-400 focus:bg-white'}`} 
+                required={perfil === 'FIJO'}
+              >
+                {perfil === 'FIJO' ? (
+                  <>
+                    <option value="">-- Selecciona una Sede Fija --</option>
+                    {sedesDisponibles.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+                  </>
+                ) : (
+                  <option value="">ASIGNACIÓN DINÁMICA (VOLANTE)</option>
+                )}
+              </select>
+            </div>
+
+            {/* ─── ÁREA BIOMÉTRICA ─── */}
+            <div className="pt-4 border-t border-gray-100">
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 ml-1 flex justify-between">
+                Escaneo Facial 
+                <span className={descriptorGenerado ? 'text-emerald-500' : 'text-amber-500'}>
+                  {descriptorGenerado ? '✓ Capturado' : 'Pendiente'}
+                </span>
+              </label>
+              
+              <div className="bg-slate-900 rounded-2xl p-4 text-center">
+                <p className="text-[10px] font-bold text-slate-400 mb-3 uppercase tracking-widest">{mensajeIA}</p>
+                
+                {!capturando && !descriptorGenerado && (
+                  <button type="button" onClick={iniciarCamara} disabled={!modelosCargados} className={`w-full py-4 rounded-xl font-black text-xs uppercase tracking-widest transition-all ${modelosCargados ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 hover:text-white' : 'bg-slate-800/50 text-slate-600 cursor-not-allowed'}`}>
+                    📸 Activar Cámara
+                  </button>
+                )}
+
+                {capturando && (
+                  <div className="relative w-full rounded-xl bg-black overflow-hidden aspect-square border border-slate-700 mb-3">
+                    <video ref={videoRef} autoPlay muted playsInline className="absolute top-0 left-0 w-full h-full object-cover transform scale-x-[-1]"></video>
+                    <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full object-cover transform scale-x-[-1] pointer-events-none"></canvas>
+                    <button type="button" onClick={capturarHuellaFacial} className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-full font-black text-xs uppercase tracking-widest shadow-lg shadow-emerald-500/50 active:scale-95 transition-all">
+                      🎯 Extraer Rostro
+                    </button>
+                  </div>
+                )}
+
+                {descriptorGenerado && !capturando && (
+                  <div className="py-6">
+                    <div className="text-emerald-400 mb-2 text-4xl">✓</div>
+                    <button type="button" onClick={iniciarCamara} className="text-[10px] font-bold text-slate-400 hover:text-white underline mt-2 uppercase tracking-widest">
+                      Escanear de nuevo
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button type="submit" disabled={!descriptorGenerado} className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg transition-all flex justify-center items-center gap-2 ${descriptorGenerado ? 'bg-gray-900 text-white hover:bg-gray-800 shadow-gray-900/20 active:scale-95' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                💾 Enrolar Guardia
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* ─── COLUMNA DERECHA: TABLA ─── */}
+        <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-fit">
+          <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+             <h3 className="text-lg font-black text-gray-900 tracking-tight">Personal Enrolado</h3>
+             <span className="bg-white border border-gray-200 text-gray-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest shadow-sm">
+               {listaUsuarios.length} Registros
+             </span>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-white text-[10px] font-black uppercase tracking-widest text-gray-400">
+                  <th className="p-5 border-b border-gray-100">Guardia</th>
+                  <th className="p-5 border-b border-gray-100">Perfil y Asignación</th>
+                  <th className="p-5 border-b border-gray-100 text-center">Estado Biomédico</th>
+                  <th className="p-5 border-b border-gray-100 text-right">Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="text-xs font-medium">
+                {listaUsuarios.map(u => (
+                  <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/80 transition-colors">
+                    <td className="p-5">
+                      <div className="font-black text-gray-900 text-sm">{u.nombre}</div>
+                      <div className="text-gray-400 font-mono text-[10px] mt-1">DNI: {u.dni}</div>
+                    </td>
+                    
+                    <td className="p-5">
+                      <span className={`inline-block px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest border mb-1.5 ${u.perfil === 'FIJO' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                        {u.perfil}
+                      </span>
+                      <div className="text-[10px] font-bold text-gray-600">{u.sedeNombre}</div>
+                    </td>
+
+                    <td className="p-5 text-center">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[9px] font-black uppercase tracking-widest">
+                        ✓ Verificado
+                      </span>
+                    </td>
+
+                    <td className="p-5 text-right space-x-2">
+                      <button className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors" title="Eliminar">🗑️</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {listaUsuarios.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-4xl mb-3 opacity-50">👨‍✈️</div>
+                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No hay personal enrolado aún.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

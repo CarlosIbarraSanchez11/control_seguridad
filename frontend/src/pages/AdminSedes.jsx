@@ -1,19 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import Swal from 'sweetalert2';
 import 'leaflet/dist/leaflet.css';
+
+// ✨ IMPORTAMOS NUESTRA API REAL
+import { sedesAPI, ambientesAPI } from '../services/api';
 
 function MapaClic({ setPosicion }) {
   useMapEvents({ click(e) { setPosicion(e.latlng); } });
   return null;
 }
 
+function RecentrarMapa({ posicion }) {
+  const map = useMapEvents({});
+  if (posicion) map.setView(posicion, 16);
+  return null;
+}
+
 export default function AdminSedes() {
   // ─── 1. ESTADOS DE SEDES ───
-  const [listaSedes, setListaSedes] = useState([
-    { id: 1, nombre: 'Sede ATE - Principal', lat: -12.0253, lng: -76.9201, radio: 50, activo: true },
-    { id: 2, nombre: 'Pabellón B (Norte)', lat: -12.0280, lng: -76.9230, radio: 30, activo: false }
-  ]);
-
+  const [listaSedes, setListaSedes] = useState([]); // ✨ Ahora empieza vacío
   const [editandoId, setEditandoId] = useState(null);
   const [nombreSede, setNombreSede] = useState('');
   const [radio, setRadio] = useState(50);
@@ -24,33 +30,78 @@ export default function AdminSedes() {
   const centroInicial = [-12.05, -77.05];
 
   // ─── 2. ESTADOS DE AMBIENTES (MODAL) ───
-  // Simulamos la tabla 'Ambiente' de Prisma
-  const [listaAmbientes, setListaAmbientes] = useState([
-    { id: 101, sedeId: 1, nombre: 'Puerta Principal' },
-    { id: 102, sedeId: 1, nombre: 'Recepción Sótano' },
-    { id: 103, sedeId: 2, nombre: 'Almacén de Equipos' }
-  ]);
-  const [sedeSeleccionada, setSedeSeleccionada] = useState(null); // Controla si el modal está abierto
+  const [listaAmbientes, setListaAmbientes] = useState([]); // ✨ Ahora empieza vacío
+  const [sedeSeleccionada, setSedeSeleccionada] = useState(null);
   const [nuevoAmbiente, setNuevoAmbiente] = useState('');
 
-  // ─── FUNCIONES DE SEDES ───
-  const guardarSede = (e) => {
+  // ✨ 3. CARGAR SEDES DESDE LA BASE DE DATOS AL INICIAR
+  useEffect(() => {
+    cargarSedes();
+  }, []);
+
+  const cargarSedes = async () => {
+    try {
+      const respuesta = await sedesAPI.obtenerTodas();
+      setListaSedes(respuesta.data);
+    } catch (error) {
+      console.error("Error al cargar sedes:", error);
+    }
+  };
+
+  // ✨ 4. CARGAR AMBIENTES CADA VEZ QUE SE ABRE EL MODAL DE UNA SEDE
+  useEffect(() => {
+    if (sedeSeleccionada) {
+      cargarAmbientesDeSede(sedeSeleccionada.id);
+    }
+  }, [sedeSeleccionada]);
+
+  const cargarAmbientesDeSede = async (sedeId) => {
+    try {
+      const respuesta = await ambientesAPI.obtenerPorSede(sedeId);
+      setListaAmbientes(respuesta.data);
+    } catch (error) {
+      console.error("Error al cargar ambientes:", error);
+    }
+  };
+
+  // ─── FUNCIONES CRUD SEDES REALES ───
+  const guardarSede = async (e) => {
     e.preventDefault();
     if (!nombreSede || !posicion) {
-      alert('Por favor ingresa el nombre y selecciona un punto en el mapa.');
+      Swal.fire({ icon: 'warning', title: 'Datos Incompletos', text: 'Ingresa nombre y ubicación.', confirmButtonColor: '#f59e0b' });
       return;
     }
 
-    if (editandoId) {
-      setListaSedes(listaSedes.map(s => s.id === editandoId ? { ...s, nombre: nombreSede, lat: posicion.lat, lng: posicion.lng, radio: Number(radio) } : s));
+    try {
+      const datosSede = {
+        nombre: nombreSede,
+        lat: posicion.lat,
+        lng: posicion.lng,
+        radio: Number(radio)
+      };
+
+      if (editandoId) {
+        // ✨ ACTUALIZAR EN BASE DE DATOS
+        await sedesAPI.actualizar(editandoId, datosSede);
+        Swal.fire({ icon: 'success', title: '¡Actualizada!', text: 'Sede actualizada.', timer: 2000, showConfirmButton: false });
+      } else {
+        // ✨ CREAR EN BASE DE DATOS
+        await sedesAPI.crear(datosSede);
+        Swal.fire({ icon: 'success', title: '¡Registrada!', text: 'Nueva sede agregada.', timer: 2000, showConfirmButton: false });
+      }
+      
+      cargarSedes(); // Recargamos la lista desde MySQL
+      
+      // Limpiamos
       setEditandoId(null);
-    } else {
-      const nuevaSede = { id: Date.now(), nombre: nombreSede, lat: posicion.lat, lng: posicion.lng, radio: Number(radio), activo: true };
-      setListaSedes([...listaSedes, nuevaSede]);
+      setNombreSede('');
+      setRadio(50);
+      setPosicion(null);
+      setBusqueda('');
+
+    } catch (error) {
+      Swal.fire({ icon: 'error', title: 'Error', text: 'Ocurrió un problema al guardar la sede.' });
     }
-    setNombreSede('');
-    setRadio(50);
-    setPosicion(null);
   };
 
   const editarSede = (sede) => {
@@ -60,11 +111,17 @@ export default function AdminSedes() {
     setPosicion({ lat: sede.lat, lng: sede.lng });
   };
 
-  const toggleEstadoSede = (id) => {
-    setListaSedes(listaSedes.map(s => s.id === id ? { ...s, activo: !s.activo } : s));
+  const toggleEstadoSede = async (sede) => {
+    try {
+      // Mandamos a actualizar solo el campo activo invertido
+      await sedesAPI.actualizar(sede.id, { activo: !sede.activo });
+      cargarSedes(); // Recargamos la tabla
+    } catch (error) {
+      console.error("Error al cambiar estado", error);
+    }
   };
 
-  // ─── FUNCIONES DE AMBIENTES ───
+  // ─── FUNCIONES CRUD AMBIENTES REALES ───
   const abrirModalAmbientes = (sede) => {
     setSedeSeleccionada(sede);
     setNuevoAmbiente('');
@@ -72,57 +129,50 @@ export default function AdminSedes() {
 
   const cerrarModal = () => {
     setSedeSeleccionada(null);
+    setListaAmbientes([]); // Limpiamos para el próximo modal
   };
 
-  const agregarAmbiente = (e) => {
+  const agregarAmbiente = async (e) => {
     e.preventDefault();
     if (!nuevoAmbiente.trim()) return;
     
-    const nuevo = {
-      id: Date.now(),
-      sedeId: sedeSeleccionada.id,
-      nombre: nuevoAmbiente.trim()
-    };
-    
-    setListaAmbientes([...listaAmbientes, nuevo]);
-    setNuevoAmbiente('');
+    try {
+      // ✨ CREAR AMBIENTE EN BASE DE DATOS
+      await ambientesAPI.crear({
+        nombre: nuevoAmbiente.trim(),
+        sedeId: sedeSeleccionada.id
+      });
+      
+      setNuevoAmbiente('');
+      cargarAmbientesDeSede(sedeSeleccionada.id); // Recargamos los ambientes de esta sede
+      
+    } catch (error) {
+      console.error("Error al guardar ambiente", error);
+    }
   };
 
-  const eliminarAmbiente = (id) => {
-    setListaAmbientes(listaAmbientes.filter(a => a.id !== id));
+  const eliminarAmbiente = async (id) => {
+    try {
+      // ✨ ELIMINAR AMBIENTE EN BASE DE DATOS
+      await ambientesAPI.eliminar(id);
+      cargarAmbientesDeSede(sedeSeleccionada.id); // Recargamos la lista visual
+    } catch (error) {
+      console.error("Error al eliminar ambiente", error);
+    }
   };
 
-  // Filtramos los ambientes que pertenecen a la sede abierta en el modal
-  const ambientesDeLaSede = listaAmbientes.filter(a => a.sedeId === sedeSeleccionada?.id);
-
+  // ─── BÚSQUEDA DE DIRECCIONES (Se mantiene igual) ───
   const buscarDireccion = async (e) => {
     e.preventDefault();
     if (!busqueda.trim()) return;
-
     setBuscando(true);
     try {
-      // Consultamos al servicio gratuito de OpenStreetMap
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(busqueda)}&countrycodes=pe`
-      ); // Filtrado para buscar solo en Perú
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(busqueda)}&countrycodes=pe`);
       const data = await response.json();
-
       if (data && data.length > 0) {
-        const primerResultado = data[0];
-        const nuevaPosicion = {
-          lat: parseFloat(primerResultado.lat),
-          lng: parseFloat(primerResultado.lon)
-        };
-        
-        // Fijamos la posición en nuestro formulario
-        setPosicion(nuevaPosicion);
+        setPosicion({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
       } else {
-        Swal.fire({
-          icon: 'info',
-          title: 'Ubicación no encontrada',
-          text: 'Prueba especificando el distrito o avenidas principales.',
-          confirmButtonColor: '#6366f1'
-        });
+        Swal.fire({ icon: 'info', title: 'Ubicación no encontrada', confirmButtonColor: '#4f46e5' });
       }
     } catch (error) {
       console.error("Error al geocodificar:", error);
@@ -177,7 +227,7 @@ export default function AdminSedes() {
                   type="text" 
                   value={busqueda} 
                   onChange={(e) => setBusqueda(e.target.value)} 
-                  placeholder="Ej: Av. San Juan de Dios, Puente Piedra" 
+                  placeholder="Ej: Av. San Pedro, Puente Piedra" 
                   className="flex-1 px-4 py-2.5 border border-gray-100 rounded-xl bg-gray-50 font-bold text-xs text-gray-900 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 focus:bg-white transition-all"
                 />
                 <button 
@@ -204,6 +254,7 @@ export default function AdminSedes() {
                  <MapContainer center={posicion || centroInicial} zoom={13} className="h-full w-full z-0">
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <MapaClic setPosicion={setPosicion} />
+                    <RecentrarMapa posicion={posicion} /> 
                     {posicion && <Marker position={posicion}></Marker>}
                  </MapContainer>
               </div>
@@ -214,7 +265,7 @@ export default function AdminSedes() {
                 {editandoId ? '💾 Guardar Cambios' : '➕ Agregar Sede'}
               </button>
               {editandoId && (
-                <button type="button" onClick={() => { setEditandoId(null); setNombreSede(''); setPosicion(null); }} className="w-full mt-3 text-gray-400 hover:text-gray-600 font-bold text-xs uppercase tracking-widest transition-colors py-2">
+                <button type="button" onClick={() => { setEditandoId(null); setNombreSede(''); setPosicion(null); setBusqueda(''); }} className="w-full mt-3 text-gray-400 hover:text-gray-600 font-bold text-xs uppercase tracking-widest transition-colors py-2">
                   Cancelar Edición
                 </button>
               )}
@@ -256,7 +307,6 @@ export default function AdminSedes() {
                       </span>
                     </td>
                     <td className="p-5 text-right space-x-2">
-                      {/* ✨ NUEVO BOTÓN DE AMBIENTES */}
                       <button 
                         onClick={() => abrirModalAmbientes(sede)} 
                         className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-violet-50 text-violet-600 hover:bg-violet-100 transition-colors"
@@ -266,7 +316,7 @@ export default function AdminSedes() {
                       </button>
                       
                       <button onClick={() => editarSede(sede)} className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors" title="Editar">✏️</button>
-                      <button onClick={() => toggleEstadoSede(sede.id)} className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${sede.activo ? 'bg-rose-50 text-rose-600 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`} title={sede.activo ? 'Inhabilitar' : 'Habilitar'}>
+                      <button onClick={() => toggleEstadoSede(sede)} className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${sede.activo ? 'bg-rose-50 text-rose-600 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`} title={sede.activo ? 'Inhabilitar' : 'Habilitar'}>
                         {sede.activo ? '🛑' : '✅'}
                       </button>
                     </td>
@@ -274,6 +324,13 @@ export default function AdminSedes() {
                 ))}
               </tbody>
             </table>
+            
+            {listaSedes.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-4xl mb-3 opacity-50">🏢</div>
+                <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No hay sedes registradas en el sistema.</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -283,7 +340,6 @@ export default function AdminSedes() {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-gray-950/60 backdrop-blur-sm animate-in fade-in duration-200">
           
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100">
-            {/* Header del Modal */}
             <div className="bg-gray-50/80 px-6 py-5 border-b border-gray-100 flex justify-between items-center">
               <div>
                 <p className="text-[10px] font-black text-violet-500 uppercase tracking-widest mb-1">Gestión de Ambientes</p>
@@ -294,7 +350,6 @@ export default function AdminSedes() {
               </button>
             </div>
 
-            {/* Contenido del Modal */}
             <div className="p-6">
               <form onSubmit={agregarAmbiente} className="flex gap-2 mb-6">
                 <input 
@@ -310,15 +365,15 @@ export default function AdminSedes() {
               </form>
 
               <div className="max-h-[300px] overflow-y-auto pr-2">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Ambientes Registrados ({ambientesDeLaSede.length})</p>
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Ambientes Registrados ({listaAmbientes.length})</p>
                 
-                {ambientesDeLaSede.length === 0 ? (
+                {listaAmbientes.length === 0 ? (
                   <div className="text-center py-8 text-gray-400 font-bold text-sm bg-gray-50 rounded-2xl border border-dashed border-gray-200">
                     No hay ambientes registrados en esta sede.
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {ambientesDeLaSede.map(ambiente => (
+                    {listaAmbientes.map(ambiente => (
                       <div key={ambiente.id} className="flex justify-between items-center p-4 rounded-xl border border-gray-100 hover:border-violet-200 hover:shadow-sm bg-white transition-all group">
                         <span className="font-bold text-sm text-gray-800 flex items-center gap-3">
                           <span className="text-violet-400">🚪</span> {ambiente.nombre}
@@ -336,7 +391,6 @@ export default function AdminSedes() {
               </div>
             </div>
             
-            {/* Footer del Modal */}
             <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end">
                <button onClick={cerrarModal} className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-sm hover:bg-gray-50 transition-colors">
                  Cerrar Panel

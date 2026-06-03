@@ -26,9 +26,21 @@ model Sede {
   activo      Boolean     @default(true)
   creadoEn    DateTime    @default(now())
 
+  ambientes   Ambiente[]  // ✨ NUEVA RELACIÓN
   guardias    Guardia[]
   turnos      Turno[]
   marcaciones Marcacion[]
+}
+
+// ✨ NUEVO MODELO
+model Ambiente {
+  id        Int      @id @default(autoincrement())
+  nombre    String
+  activo    Boolean  @default(true)
+  creadoEn  DateTime @default(now())
+
+  sedeId    Int
+  sede      Sede     @relation(fields: [sedeId], references: [id], onDelete: Cascade)
 }
 
 model Guardia {
@@ -36,7 +48,6 @@ model Guardia {
   nombre      String
   dni         String      @unique
   perfil      String
-  plantilla   String?
   descriptor  Json?
   creadoEn    DateTime    @default(now())
 

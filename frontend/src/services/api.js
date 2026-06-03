@@ -51,4 +51,10 @@ export const authAPI = {
   loginAdmin: (credenciales) => api.post('/auth/login-admin', credenciales),
 };
 
+export const ambientesAPI = {
+  obtenerPorSede: (sedeId) => api.get(`/ambientes/sede/${sedeId}`),
+  crear: (data) => api.post('/ambientes', data),
+  eliminar: (id) => api.delete(`/ambientes/${id}`),
+};
+
 export default api;
